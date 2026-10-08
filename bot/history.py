@@ -65,9 +65,14 @@ class HistoryReader:
                 "The owner must /login in the bot's private chat to read older messages."
             )
         me = await self.client.get_me()
-        if me.id != self.service.db.get("owner_id"):
-            raise HistoryUnavailable("History session does not belong to the permanently bound owner.")
+        self.remember_account(me)
         return self.client
+
+    def remember_account(self, account):
+        # Reader identity is separate from bot ownership and never grants operator access.
+        self.service.db.set(
+            "history_account", {"id": account.id, "username": getattr(account, "username", None)}
+        )
 
     async def entity(self, chat):
         if not self.service.db.enabled(chat) or chat == self.service.config.log_group:
@@ -76,11 +81,13 @@ class HistoryReader:
         try:
             return await client.get_input_entity(chat)
         except ValueError:
-            # Populate access hashes only from chats the owner already belongs to. Never join a group.
+            # Populate access hashes only from chats the linked account belongs to. Never join a group.
             async for dialog in client.iter_dialogs():
                 if dialog.id == chat:
                     return dialog.input_entity
-            raise HistoryUnavailable("The owner's account must already be a member of this group.") from None
+            raise HistoryUnavailable(
+                "The linked history account must already be a member of this group."
+            ) from None
 
     @staticmethod
     async def record(message, chat):
@@ -172,7 +179,7 @@ class HistoryReader:
                     if await self.client.is_user_authorized():
                         await self.connected()
                         await self.service.send(
-                            message.chat_id, "✅ Owner session already connected. Old history is available."
+                            message.chat_id, "✅ History session already connected. Old history is available."
                         )
                         return
                     sent = await self.client.send_code_request(args)
@@ -219,13 +226,16 @@ class HistoryReader:
                             await self.client.log_out()
                         await self.client.disconnect()
                         self.client = None
+                    self.service.db.set("history_account", None)
                     await self.service.send(
-                        message.chat_id, "Owner history session disconnected and revoked."
+                        message.chat_id, "Linked history session disconnected and revoked."
                     )
                 elif cmd == "/history_status":
                     await self.connected()
                     await self.service.send(
-                        message.chat_id, "✅ History reader authenticated as the bound owner."
+                        message.chat_id,
+                        f"✅ History reader connected\n\nLinked account ID: {self.service.db.get('history_account')['id']}. "
+                        "Bot ownership is unchanged.",
                     )
             except HistoryUnavailable as exc:
                 await self.service.send(message.chat_id, str(exc))
@@ -311,12 +321,7 @@ class HistoryReader:
 
     async def finish(self, chat):
         me = await self.client.get_me()
-        if me.id != self.service.db.get("owner_id"):
-            await self.client.log_out()
-            await self.cancel()
-            raise HistoryUnavailable(
-                "Account rejected: it must match the permanently bound owner's numeric ID."
-            )
+        self.remember_account(me)
         path = self.session_path()
         if path.exists():
             path.chmod(0o600)
@@ -336,13 +341,13 @@ class HistoryReader:
             self.expiry_task = None
         await self.service.send(
             chat,
-            "✅ Owner authenticated\n\nSession saved on the server. "
+            f"✅ History account connected\n\nLinked account ID: {me.id}. Session saved on the server. "
             + (
                 "Its path is saved in .env. "
                 if env_saved
                 else "Keep TG_USER_SESSION_PATH set to this session path in your deployment environment. "
             )
-            + "Summaries can now load up to 1000 older messages in enabled groups you already belong to. "
+            + "Summaries can now load up to 1000 older messages in enabled groups this account already belongs to. "
             "Use /logout to revoke this session.",
         )
 
@@ -388,15 +393,14 @@ async def terminal_login():
     )
     try:
         await client.start(
-            phone=lambda: input("Owner phone (+countrycode): "),
+            phone=lambda: input("History account phone (+countrycode): "),
             code_callback=lambda: getpass.getpass("Telegram login code: "),
             password=lambda: getpass.getpass("Two-step password: "),
         )
-        if (await client.get_me()).id != owner:
-            await client.log_out()
-            raise SystemExit("Account rejected: it is not the bound owner.")
+        me = await client.get_me()
+        db.set("history_account", {"id": me.id, "username": getattr(me, "username", None)})
         path.chmod(0o600)
-        print("Owner history session saved. Restart the bot.")
+        print(f"History session saved for account {me.id}. Bot ownership is unchanged. Restart the bot.")
     finally:
         await client.disconnect()
         db.close()

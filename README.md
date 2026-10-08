@@ -153,25 +153,27 @@ VISION_MODEL=qwen/qwen3.8-27b
 ```
 
 Restart the bot after changing environment variables. As the permanently bound owner, in the bot's
-**private chat**, send `/login +COUNTRYCODEPHONENUMBER`. Telegram sends a login code to your account.
+**private chat**, send `/login +COUNTRYCODEPHONENUMBER`. You can connect a separate Telegram account
+for history; it does not need to match the bot owner's numeric ID. Telegram sends a login code to that account.
 Enter it using the private inline keypad and press **Submit**. The keypad is bound to the owner,
 the private chat, a random nonce and its message, and expires after five minutes. Code entry is never
 stored in SQLite, echoed, or logged. Do not send/forward the OTP as a text message: Telegram invalidates
 login codes sent into another chat. If Telegram requires two-step verification, use `/login2fa PASSWORD`
 privately; that message is deleted immediately and is never added to memory. Alternatively use terminal login below.
-Only the numeric owner can authenticate, even when other operators have been approved. Logging in as
-another account is rejected and that newly created session is revoked.
+Only the numeric owner can start and control authentication in the bot, even when other operators have
+been approved. The linked reader account is recorded separately; connecting it never transfers bot
+ownership or grants that account operator access. `/history_status` shows the linked account ID.
 
 The reusable account credential is saved in the session file with owner-only filesystem permissions.
 `.env` stores the **path**, rather than the session credential; keep the `data` directory private and
 do not commit or share session files. Docker persists the session in the existing data volume; `env_file`
 provides the path at startup. `/history_status` verifies authentication. `/logout` revokes the reader session.
-The reader only reads enabled source groups that the owner already belongs to. It never joins groups,
+The reader only reads enabled source groups that the linked account already belongs to. It never joins groups,
 sends messages as the owner, or applies old moderation rules to imported history.
 
 Once authenticated, `/summary 500` or `/summary 1000` imports the requested recent history before the
 request, then summarizes the saved snapshot in chunks. `/history 500` explicitly imports without summarizing
-(approved current group admins only). Telegram only returns history visible to the owner's account;
+(approved current group admins only). Telegram only returns history visible to the linked account;
 deleted messages and history hidden from that account cannot be recovered. The bot reports the actual
 available count rather than inventing missing messages.
 

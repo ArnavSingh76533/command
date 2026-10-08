@@ -70,7 +70,7 @@ Owner controls (private chat):
 Keys go in server environment variables, never in group messages.
 
 The bot retains received/imported text and metadata in SQLite. Older history needs TG_API_ID,
-TG_API_HASH and an owner-authenticated session. Replied photos use VISION_MODEL; summaries do not
+TG_API_HASH and a reader session linked by the owner (it can be a different account). Replied photos use VISION_MODEL; summaries do not
 analyze every attachment. Audio/video transcription and general file-content reading are unavailable.
 Summary ratings are subjective.
 """

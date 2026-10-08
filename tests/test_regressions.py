@@ -292,15 +292,17 @@ def test_read_native_rich_reply_preserves_visible_text():
     assert message_text(message) == "Muted\nReason: <literal text>\nWaiting for admin inspection"
 
 
-async def test_history_session_wrong_account_denied(service):
+async def test_history_session_separate_account_accepted_without_owner_change(service, db):
     reader = service.history
     reader.client = SimpleNamespace(
         is_connected=lambda: True,
         is_user_authorized=AsyncMock(return_value=True),
         get_me=AsyncMock(return_value=SimpleNamespace(id=123)),
     )
-    with pytest.raises(HistoryUnavailable):
-        await reader.connected()
+    assert await reader.connected() is reader.client
+    assert db.get("history_account")["id"] == 123
+    assert db.get("owner_id") == 1
+    assert not db.allowed(123)
 
 
 async def test_disabled_group_history_denied_before_connection(service):
@@ -360,16 +362,22 @@ async def test_authenticated_session_saves_path_not_secret_to_env(service, tmp_p
     assert reader.login is None
 
 
-async def test_authentication_rejects_nonowner_account_and_revokes_session(service):
+async def test_authentication_accepts_separate_account_without_revoking_session(
+    service, db, tmp_path, monkeypatch
+):
+    monkeypatch.setenv("ENV_FILE", str(tmp_path / "absent-env"))
+    monkeypatch.setenv("TG_USER_SESSION_PATH", str(tmp_path / "linked.session"))
     reader = service.history
     reader.client = SimpleNamespace(
         get_me=AsyncMock(return_value=SimpleNamespace(id=2)), log_out=AsyncMock(), disconnect=AsyncMock()
     )
     reader.login = {"digits": "12345"}
-    with pytest.raises(HistoryUnavailable):
-        await reader.finish(1)
-    reader.client.log_out.assert_awaited_once()
+    await reader.finish(1)
+    reader.client.log_out.assert_not_awaited()
     assert reader.login is None
+    assert db.get("history_account")["id"] == 2
+    assert db.get("owner_id") == 1
+    assert not db.allowed(2)
 
 
 async def test_history_import_does_not_enqueue_past_moderation(service, db):
@@ -395,7 +403,7 @@ async def test_history_import_does_not_enqueue_past_moderation(service, db):
     assert db.one("SELECT count(*) n FROM jobs")["n"] == 0
 
 
-async def test_complete_private_keypad_login_binds_owner(service, tmp_path, monkeypatch):
+async def test_complete_private_keypad_login_links_separate_account(service, db, tmp_path, monkeypatch):
     reader = service.history
     path = tmp_path / "owner.session"
     path.write_text("session")
@@ -407,7 +415,7 @@ async def test_complete_private_keypad_login_binds_owner(service, tmp_path, monk
         is_user_authorized=AsyncMock(return_value=False),
         send_code_request=AsyncMock(return_value=SimpleNamespace(phone_code_hash="hash")),
         sign_in=AsyncMock(),
-        get_me=AsyncMock(return_value=SimpleNamespace(id=1)),
+        get_me=AsyncMock(return_value=SimpleNamespace(id=2)),
     )
     reader.new_client = lambda: client
     await service.command(tg_message(chat=1, text="/login +1234567890"), "/login +1234567890")
@@ -419,6 +427,8 @@ async def test_complete_private_keypad_login_binds_owner(service, tmp_path, monk
     client.sign_in.assert_awaited_once_with(phone="+1234567890", code="12345", phone_code_hash="hash")
     assert reader.login is None
     assert path.stat().st_mode & 0o777 == 0o600
+    assert db.get("history_account")["id"] == 2
+    assert db.get("owner_id") == 1
 
 
 async def test_two_step_password_deleted_and_not_archived(service, db):
