@@ -24,6 +24,12 @@ when starting it with `python -m bot.main`. If you already installed `requiremen
 `build_editable` error from `pip install -e .`, skip that editable-install step. Create/edit `.env`
 if needed, then run `python3 -m bot.main` from this directory. Your installed dependencies remain usable.
 
+If startup reports `Only timezones from the pytz library are supported`, an older APScheduler
+from another Telegram bot installation is being imported. Run `git pull --ff-only`, reinstall
+with `python3 -m pip install --upgrade -r requirements.txt`, then start again. The requirements
+pin compatible APScheduler/tzlocal versions. A virtual environment avoids conflicts with other bots.
+The bot uses its own persistent asyncio queue and disables PTB's JobQueue after builder initialization.
+
 Fill `BOT_TOKEN`, `GROQ_API_KEY` and `LOG_GROUP_ID`. Set `OWNER_ID` to the numeric ID
 of **@yucant** if you know it. Otherwise that username must `/start` in the bot's
 private chat once. The bot permanently binds the numeric ID, so a later username

@@ -1,5 +1,7 @@
 # Versions used for local validation (Python 3.12)
 python-telegram-bot==22.8
+APScheduler==3.11.3
+tzlocal==5.3.1
 httpx==0.28.1
 pydantic==2.13.5
 python-dotenv==1.2.4

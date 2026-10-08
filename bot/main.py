@@ -33,6 +33,8 @@ def main():
     app = (
         Application.builder()
         .token(config.token)
+        # Our durable moderation workers use asyncio, not PTB's optional scheduler.
+        .job_queue(None)
         .rate_limiter(AIORateLimiter(max_retries=2))
         .post_init(service.startup)
         .post_stop(stop)
