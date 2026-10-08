@@ -6,18 +6,23 @@ Default model: `openai/gpt-oss-120b` at `https://api.groq.com/openai/v1`.
 
 ## Run on an Ubuntu / Oracle Linux VPS
 
-Python 3.11 or newer is required. Ubuntu packages: `python3`, `python3-venv`, `git`.
+Python 3.10 or newer is supported. Ubuntu packages: `python3`, `python3-venv`, `git`.
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
+python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
-python -m pip install --no-deps -e .
 cp .env.example .env
 chmod 600 .env
 nano .env
 python -m bot.main
 ```
+
+Run these commands from the repository directory. Installing the project itself is unnecessary
+when starting it with `python -m bot.main`. If you already installed `requirements.txt` and got a
+`build_editable` error from `pip install -e .`, skip that editable-install step. Create/edit `.env`
+if needed, then run `python3 -m bot.main` from this directory. Your installed dependencies remain usable.
 
 Fill `BOT_TOKEN`, `GROQ_API_KEY` and `LOG_GROUP_ID`. Set `OWNER_ID` to the numeric ID
 of **@yucant** if you know it. Otherwise that username must `/start` in the bot's
@@ -205,7 +210,8 @@ Design references:
 ## Tests
 
 ```bash
-python -m pip install -e '.[test]'
+python -m pip install --upgrade pip
+python -m pip install '.[test]'
 python -m ruff check .
 python -m pytest -q
 ```
