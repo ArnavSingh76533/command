@@ -133,7 +133,9 @@ async def test_false_flag_persists_without_provider_and_exact_replay_ignored(ser
     await service.resolve(db.request(rid), "false", 10)
     assert db.exact_exception(-1001, r["id"], "JOIN   @jobs for work")
     await service.moderate(record())
-    assert service.llm.request.await_count == 1  # feedback attempted only; classifier skipped
+    assert service.llm.request.await_count == 0  # background feedback scheduled; classifier skipped
+    await service.learn_false_flag(db.request(rid))
+    assert service.llm.request.await_count == 1
     service.bot.delete_message.assert_not_awaited()
 
 

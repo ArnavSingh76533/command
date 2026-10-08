@@ -54,6 +54,9 @@ class DB:
           message_id INTEGER NOT NULL, hash TEXT NOT NULL, item TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
           UNIQUE(chat_id,message_id,hash));
         CREATE INDEX IF NOT EXISTS job_pending ON jobs(status,id);
+        CREATE TABLE IF NOT EXISTS violations (chat_id INTEGER NOT NULL, rule_id INTEGER NOT NULL,
+          user_id INTEGER NOT NULL, message_id INTEGER NOT NULL, created REAL NOT NULL,
+          PRIMARY KEY(chat_id,rule_id,user_id,message_id));
         """)
         self.conn.commit()
 

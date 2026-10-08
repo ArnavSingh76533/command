@@ -50,7 +50,7 @@ class LLM:
             },
         )
 
-    async def request(self, system, data, schema=None, output=2000):
+    async def request(self, system, data, schema=None, output=4000, image=None):
         cfg = self.settings()
         key = os.getenv(cfg["key_env"])
         if not key:
@@ -64,19 +64,38 @@ class LLM:
                 {"role": "user", "content": json.dumps(data, ensure_ascii=False)},
             ],
         }
+        if image:
+            body["model"] = os.getenv("VISION_MODEL", "qwen/qwen3.8-27b")
+            body["messages"][1]["content"] = [
+                {"type": "text", "text": json.dumps(data, ensure_ascii=False)},
+                {"type": "image_url", "image_url": {"url": image}},
+            ]
+        token_key = "max_tokens"
+        if "api.groq.com" == urlparse(cfg["base_url"]).hostname:
+            token_key = "max_completion_tokens"
+            body[token_key] = body.pop("max_tokens")
+            if "gpt-oss" in body["model"]:
+                body["reasoning_effort"] = "low"
+                body["include_reasoning"] = False
+        json_schema = schema.model_json_schema() if schema else None
+        if json_schema:
+            # Strict providers require every property, including Pydantic fields with defaults.
+            json_schema["required"] = list(json_schema["properties"])
+            for prop in json_schema["properties"].values():
+                prop.pop("default", None)
         if schema and cfg["format"] == "schema":
             body["response_format"] = {
                 "type": "json_schema",
                 "json_schema": {
                     "name": schema.__name__,
                     "strict": True,
-                    "schema": schema.model_json_schema(),
+                    "schema": json_schema,
                 },
             }
         elif schema and cfg["format"] == "json":
             body["response_format"] = {"type": "json_object"}
         if schema:
-            body["messages"][0]["content"] += "\nJSON schema: " + json.dumps(schema.model_json_schema())
+            body["messages"][0]["content"] += "\nJSON schema: " + json.dumps(json_schema)
         async with self.slots:
             for attempt in range(3):
                 try:
@@ -96,8 +115,11 @@ class LLM:
                     result = response.json()
                     choice = result["choices"][0]
                     if choice.get("finish_reason") == "length":
+                        if attempt < 2:
+                            body[token_key] = min(body[token_key] * 2, 16000)
+                            continue
                         raise ModelUnavailable(
-                            "Model response was truncated; choose a model with more output capacity"
+                            "The model exhausted its output budget after retries. Try a smaller summary window."
                         )
                     content = choice["message"]["content"]
                     if not isinstance(content, str) or not content.strip():
@@ -150,7 +172,7 @@ class LLM:
                 "deleted": bool(msg.get("deleted", False)),
             }
             encoded_size = len(json.dumps(item, ensure_ascii=False).encode())
-            if chunk and (size + encoded_size > 16000 or len(chunk) >= 50):
+            if chunk and (size + encoded_size > 12000 or len(chunk) >= 30):
                 notes.append(
                     await self.request(prompts.CHUNK, {"instruction": instruction, "messages": chunk})
                 )
@@ -185,7 +207,7 @@ class LLM:
         return await self.request(
             prompts.FINAL_SUMMARY,
             {"instruction": instruction, "statistics": stats, "notes": notes},
-            output=5000,
+            output=8000,
         )
 
     async def close(self):

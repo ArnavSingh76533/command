@@ -2,6 +2,7 @@
 
 Groq-powered Telegram bot with saved group history, summaries of up to 1,000 messages,
 natural-language future moderation rules, durable false-flag memory and manual ban approvals.
+Includes rich replies, immediate reply/link actions, media warnings and optional owner-authenticated older history.
 Default model: `openai/gpt-oss-120b` at `https://api.groq.com/openai/v1`.
 
 ## Run on an Ubuntu / Oracle Linux VPS
@@ -90,6 +91,13 @@ go through the model planner. Deterministic slash commands also work if the mode
 /inline @gif
 
 # Reply to the user's message:
+@YourBot what's written here
+@YourBot censor this to delete
+@YourBot copy and send me https://t.me/c/2397157264/231866
+
+@YourBot delete upcoming stickers and GIFs from everyone, warn them, kick after three violations
+
+# Future targeting:
 @YourBot delete all future messages from this person
 @YourBot delete his future stickers
 @YourBot delete his future GIFs
@@ -113,9 +121,66 @@ changeable usernames. Anonymous admins/channel-authored posts cannot reliably be
 person and remain protected. Mention filters require the literal `@username` in text/captions;
 hidden text links and image content are not treated as mentions.
 
-Automatic promo and inline rules skip current group admins and anonymous/channel senders. The
+Automatic promo, inline and group-wide media rules skip current group admins and anonymous/channel senders. The
 explicit reply-based target rule is the requested exception: it can delete a targeted admin's
 future messages, including their bot commands. It never creates ban requests or mutes admins.
+
+Immediate `censor this to delete` deletes the single replied message and does not install a rule.
+The operator must be an approved current group admin. Explicit single-message deletion can include
+an admin's message. Telegram restricts deletion by message age/type, usually to messages under 48 hours.
+Copying uses Telegram's `copyMessage`, so it can work for an older linked message without importing
+history, provided the bot can access it. Protected content and some service/media types cannot be copied.
+The source must be an enabled group; copying across groups also requires the operator to be its admin.
+`What's written here` reads only the selected text or replied photo, rather than starting a group summary.
+Photos use `VISION_MODEL` (default `qwen/qwen3.8-27b`) with the currently configured API/key. Configure a
+compatible vision model if you change providers; GPT OSS itself cannot read images. Images are limited to 10 MB.
+
+Group-wide sticker/GIF rules do not need a replied user. They delete the specified media, send warnings,
+and keep per-group/rule/user violation counts in SQLite. At the requested limit, the bot removes the member
+and immediately unbans them so they may rejoin. This explicit kick rule does not create a permanent ban.
+If unbanning fails, the fallback restriction expires in roughly one minute. Admins remain protected.
+
+## Older history and owner authentication
+
+The bot token alone cannot fetch old messages. Add Telegram **application** credentials from
+[my.telegram.org/apps](https://my.telegram.org/apps) to `.env`:
+
+```dotenv
+TG_API_ID=YOUR_NUMERIC_APPLICATION_ID
+TG_API_HASH=YOUR_APPLICATION_HASH
+TG_USER_SESSION_PATH=data/history-owner.session
+VISION_MODEL=qwen/qwen3.8-27b
+```
+
+Restart the bot after changing environment variables. As the permanently bound owner, in the bot's
+**private chat**, send `/login +COUNTRYCODEPHONENUMBER`. Telegram sends a login code to your account.
+Enter it using the private inline keypad and press **Submit**. The keypad is bound to the owner,
+the private chat, a random nonce and its message, and expires after five minutes. Code entry is never
+stored in SQLite, echoed, or logged. Do not send/forward the OTP as a text message: Telegram invalidates
+login codes sent into another chat. If Telegram requires two-step verification, use `/login2fa PASSWORD`
+privately; that message is deleted immediately and is never added to memory. Alternatively use terminal login below.
+Only the numeric owner can authenticate, even when other operators have been approved. Logging in as
+another account is rejected and that newly created session is revoked.
+
+The reusable account credential is saved in the session file with owner-only filesystem permissions.
+`.env` stores the **path**, rather than the session credential; keep the `data` directory private and
+do not commit or share session files. Docker persists the session in the existing data volume; `env_file`
+provides the path at startup. `/history_status` verifies authentication. `/logout` revokes the reader session.
+The reader only reads enabled source groups that the owner already belongs to. It never joins groups,
+sends messages as the owner, or applies old moderation rules to imported history.
+
+Once authenticated, `/summary 500` or `/summary 1000` imports the requested recent history before the
+request, then summarizes the saved snapshot in chunks. `/history 500` explicitly imports without summarizing
+(approved current group admins only). Telegram only returns history visible to the owner's account;
+deleted messages and history hidden from that account cannot be recovered. The bot reports the actual
+available count rather than inventing missing messages.
+
+Terminal alternative (stop the bot first to avoid simultaneous session access):
+
+```bash
+python3 -m bot.history
+python3 -m bot.main
+```
 
 ## Moderation and feedback
 
@@ -126,7 +191,9 @@ both calls; this is a second evaluation, not an accuracy guarantee.
 
 A durable review request is sent to the log group **before** any deletion or mute. If delivery fails,
 the bot does not apply the punishment. Muting defaults to 60 minutes and does not overwrite an
-existing moderator restriction. Review buttons:
+existing moderator restriction. A rich notice in the source group names the muted member, gives the
+reason, and says **Waiting for admin inspection** with the review number and temporary mute duration.
+Review buttons:
 
 | Button | Result |
 | --- | --- |
@@ -137,7 +204,14 @@ existing moderator restriction. Review buttons:
 The owner and current original-group admins can cancel or mark false flags, even if an admin has
 not been granted operator access. Log-group admin rights alone give no review authority. Bans
 always require original-group admin approval, including when the reviewer is the bot owner.
-Reviews are claim-once and remain usable after restarting. `/pending` reposts pending reviews.
+Reviews are claim-once and remain usable after restarting. Buttons are acknowledged before permission
+lookups; interrupted claims recover at startup. A failed keyboard edit cannot roll back a completed
+decision. `/pending` reposts pending reviews. False flags save an exact exception immediately; the
+broader AI lesson runs in the background, so slow model requests cannot hold up mute restoration.
+
+Bot text replies use Telegram's native `sendRichMessage` with escaped headings and bold emphasis.
+Set `RICH_MESSAGES=html` for an older self-hosted Bot API server; unsupported native methods fall back
+to formatted HTML. Telegram controls fonts and rendering. Copied content retains its original format.
 
 Deleted messages cannot be restored. A false flag prevents the same normalized text being flagged
 under the same rule and supplies examples/lessons to future model decisions; similar messages may
@@ -167,7 +241,10 @@ provider that lacks `/models` does not necessarily prevent its chat completions 
 
 Default `schema` uses strict JSON schemas supported by Groq GPT OSS. For compatible providers without
 strict schemas, select `json` or `text`; outputs are still validated locally. The provider must support
-OpenAI-style `/chat/completions`, `max_tokens`, and the chosen response mode. API/model outages prevent
+OpenAI-style `/chat/completions`, `max_tokens`, and the chosen response mode. Groq uses
+`max_completion_tokens`; GPT OSS uses low reasoning effort and excludes reasoning from replies.
+Truncated completions retry with a larger bounded output budget. Partial JSON is never executed.
+API/model outages prevent
 AI moderation actions and produce an alert; deterministic targeting still works. Rate limits are retried
 briefly. Large busy groups can build a queue and incur substantial model usage: every text-bearing
 nonadmin message covered by a promo rule needs at least one classifier call, and flagged messages
@@ -178,14 +255,15 @@ need a reviewer call. No paid API quota is included.
 - SQLite retains observed text/captions, media labels, author IDs, timestamps, current edits, rule
   definitions, queued jobs, review outcomes and all admin corrections. No automatic expiry.
 - Only **enabled** groups are collected; unauthorized private chats and the log group are not archived.
-- Telegram Bot API cannot download pre-join group history. `/summary 1000` means the latest 1,000
-  **saved** messages, excluding the request itself; if only 42 are saved, it reports 42/1000.
+- With owner history login configured, summaries first import accessible older messages. Without it,
+  `/summary 1000` means up to 1,000 **saved** messages, excluding the request; 42 available reports 42/1000.
 - Saved deleted messages are still part of historical summaries and are marked as deleted where known.
   Deletions by other admins aren't automatically reported to this bot.
 - Summaries chunk all selected messages, reduce notes and synthesize decisions, questions, contributions
   and conclusions. Long individual text is truncated at 3,000 characters, with a disclosed count.
   Ratings are subjective assessments of message contributions, never facts about a person's character.
-- Images/audio/video/files are represented by metadata/captions. No OCR, transcription or file parsing.
+- Group summaries represent media by metadata/captions. Explicit reply-photo reading uses the vision model;
+  audio/video transcription and general file parsing are unavailable.
 - Telegram queues updates only temporarily (normally up to 24 hours). Long downtime can lose unseen
   messages. Local jobs resume after restart; failed model analysis is skipped with an alert, rather
   than applying an uncertain punishment later.

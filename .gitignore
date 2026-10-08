@@ -10,3 +10,4 @@ dist/
 build/
 *.sqlite*
 *.db*
+*.session*

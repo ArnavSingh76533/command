@@ -7,7 +7,7 @@ name = "telegram-memory-moderator"
 version = "1.0.0"
 description = "Persistent Groq-powered Telegram summaries and reviewed moderation"
 requires-python = ">=3.10"
-dependencies = ["python-telegram-bot[rate-limiter,job-queue]>=22.8,<23", "httpx[socks]>=0.28,<0.29", "pydantic>=2.11,<3", "python-dotenv>=1.1,<2"]
+dependencies = ["python-telegram-bot[rate-limiter,job-queue]>=22.8,<23", "httpx[socks]>=0.28,<0.29", "pydantic>=2.11,<3", "python-dotenv>=1.1,<2", "Telethon>=1.45,<2"]
 
 [project.optional-dependencies]
 test = ["pytest>=8,<10", "pytest-asyncio>=1,<2", "ruff>=0.12,<1"]
