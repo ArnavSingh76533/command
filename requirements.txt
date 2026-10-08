@@ -1,0 +1,16 @@
+# Versions used for local validation (Python 3.12)
+python-telegram-bot==22.8
+httpx==0.28.1
+pydantic==2.13.5
+python-dotenv==1.2.4
+aiolimiter==1.2.1
+httpcore==1.0.9
+h11==0.16.0
+anyio==4.15.1
+certifi==2026.7.22
+idna==3.19
+socksio==1.0.0
+annotated-types==0.8.0
+pydantic-core==2.46.5
+typing_extensions==4.16.0
+typing-inspection==0.4.4
